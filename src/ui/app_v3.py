@@ -44,6 +44,12 @@ from src.ui.utils.formatting import (
     format_currency_compact,
 )
 
+# Imports Tab 3
+from src.scenarios.stress_tester import StressTester
+from src.calculations.covenant_tracker import CovenantTracker, CovenantDefinition
+from src.decision.decision_engine import DecisionEngine
+from src.core.models_v3 import Decision
+
 # =============================================================================
 # CONFIGURATION PAGE
 # =============================================================================
@@ -730,10 +736,11 @@ with tab2:
 with tab3:
     st.header("✅ Viabilité & Décision")
 
-    if st.session_state.lbo_structure is None:
-        st.warning("⚠️ Veuillez d'abord compléter l'onglet 2: Montage LBO")
+    if st.session_state.lbo_structure is None or st.session_state.normalization_data is None:
+        st.warning("⚠️ Veuillez d'abord compléter les onglets 1 et 2")
     else:
         lbo = st.session_state.lbo_structure
+        norm_data = st.session_state.normalization_data
 
         st.markdown(f"""
         **Prix acquisition**: {format_number(lbo.acquisition_price)}
@@ -743,16 +750,335 @@ with tab3:
 
         st.divider()
 
-        st.info("🚧 **En développement**: Stress tests, covenant tracking, décision automatique")
+        # =====================================================================
+        # SECTION 1: STRESS TESTS
+        # =====================================================================
+        st.subheader("🔬 1. Stress Tests")
 
-        st.markdown("""
-        ### Fonctionnalités à venir:
-        - 🔬 Stress tests automatiques (-10% CA, -20% CA, +200bps taux)
-        - 📊 Heatmap sensibilité CA vs Marge
-        - 📈 Covenant tracking (Dette/EBITDA, DSCR sur 7 ans)
-        - 🎯 Décision automatique GO/WATCH/NO-GO
-        - 💡 Recommandations personnalisées
-        """)
+        st.markdown("Test de robustesse du montage sous différents scénarios de crise:")
+
+        # Convertir LBOStructure en dict pour stress_tester
+        lbo_dict = {
+            "debt_layers": [
+                {
+                    "name": layer.name,
+                    "amount": layer.amount,
+                    "interest_rate": layer.interest_rate,
+                    "duration_years": layer.duration_years
+                }
+                for layer in lbo.debt_layers
+            ]
+        }
+
+        norm_dict = {
+            "ebitda_bank": norm_data.ebitda_bank,
+            "ebitda_equity": norm_data.ebitda_equity
+        }
+
+        # Exécuter stress tests
+        stress_results = StressTester.run_all_scenarios(
+            st.session_state.financial_data,
+            lbo_dict,
+            norm_dict
+        )
+
+        # Afficher tableau résultats
+        st.markdown("#### Résultats Stress Tests")
+
+        # En-têtes
+        col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
+        with col1:
+            st.markdown("**Scénario**")
+        with col2:
+            st.markdown("**DSCR min**")
+        with col3:
+            st.markdown("**Dette/EB**")
+        with col4:
+            st.markdown("**FCF an 3**")
+        with col5:
+            st.markdown("**Statut**")
+
+        st.divider()
+
+        # Lignes
+        for result in stress_results:
+            scenario = result["scenario"]
+            metrics = result["metrics"]
+            status = StressTester.get_status_from_metrics(metrics)
+
+            # Icône selon statut
+            if status == "GO":
+                status_icon = "🟢"
+                status_color = "green"
+            elif status == "WATCH":
+                status_icon = "🟡"
+                status_color = "orange"
+            else:
+                status_icon = "🔴"
+                status_color = "red"
+
+            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
+
+            with col1:
+                # Icône selon type
+                if scenario.scenario_type.value == "nominal":
+                    icon = "✅"
+                else:
+                    icon = "⚠️"
+                st.write(f"{icon} {scenario.name}")
+
+            with col2:
+                dscr = metrics.get("dscr_min", 0)
+                st.metric("", format_ratio(dscr), label_visibility="collapsed")
+
+            with col3:
+                leverage = metrics.get("leverage", 0)
+                st.metric("", format_ratio(leverage) + "x", label_visibility="collapsed")
+
+            with col4:
+                fcf = metrics.get("fcf_year3", 0)
+                st.metric("", format_currency_compact(fcf), label_visibility="collapsed")
+
+            with col5:
+                st.markdown(f":{status_color}[{status_icon} {status}]")
+
+        # Analyse stress tests
+        st.divider()
+
+        failed_scenarios = [
+            r for r in stress_results
+            if StressTester.get_status_from_metrics(r["metrics"]) == "NO-GO"
+        ]
+
+        if failed_scenarios:
+            st.error(f"⚠️ **{len(failed_scenarios)} scénario(s) en échec**: Dossier sensible aux chocs")
+            for result in failed_scenarios:
+                st.caption(f"  • {result['scenario'].name}: {result['scenario'].description}")
+        else:
+            st.success("✅ **Dossier robuste**: Tous les scénarios passent")
+
+        # =====================================================================
+        # SECTION 2: MATRICE SENSIBILITÉ
+        # =====================================================================
+        st.divider()
+        st.subheader("📊 2. Analyse de Sensibilité")
+
+        st.markdown("Impact croisé CA × Marge sur le DSCR:")
+
+        # Générer matrice
+        sensitivity = StressTester.generate_sensitivity_matrix(
+            st.session_state.financial_data,
+            lbo_dict,
+            norm_dict,
+            metric="dscr_min"
+        )
+
+        # Heatmap Plotly
+        heatmap_fig = go.Figure(data=go.Heatmap(
+            z=sensitivity["matrix"],
+            x=sensitivity["ca_labels"],
+            y=sensitivity["margin_labels"],
+            colorscale=[
+                [0, "red"],
+                [0.5, "orange"],
+                [0.7, "yellow"],
+                [1, "green"]
+            ],
+            text=[[f"{val:.2f}" for val in row] for row in sensitivity["matrix"]],
+            texttemplate="%{text}",
+            textfont={"size": 10},
+            colorbar=dict(title="DSCR")
+        ))
+
+        heatmap_fig.update_layout(
+            title="Heatmap Sensibilité: CA × Marge → DSCR",
+            xaxis_title="Variation CA",
+            yaxis_title="Variation Marge EBITDA",
+            height=400
+        )
+
+        st.plotly_chart(heatmap_fig, use_container_width=True)
+
+        # =====================================================================
+        # SECTION 3: COVENANT TRACKING
+        # =====================================================================
+        st.divider()
+        st.subheader("📈 3. Covenant Tracking (7 ans)")
+
+        # Préparer assumptions pour projections
+        assumptions_dict = {
+            "revenue_growth_rate": [0.05, 0.05, 0.03, 0.03, 0.02, 0.02, 0.02],
+            "ebitda_margin_evolution": [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "tax_rate": 0.25,
+            "bfr_percentage_of_revenue": 18.0,
+            "capex_maintenance_pct": 3.0
+        }
+
+        # Générer projections
+        projections = CovenantTracker.generate_projections(
+            st.session_state.financial_data,
+            lbo_dict,
+            norm_dict,
+            assumptions_dict,
+            projection_years=7
+        )
+
+        # Créer tracker
+        tracker = CovenantTracker()
+
+        # Projeter covenants
+        covenant_results = tracker.project_all_covenants(projections)
+
+        # Graphiques covenant par covenant
+        for cov_result in covenant_results:
+            covenant = cov_result["covenant"]
+            years = cov_result["years"]
+            values = cov_result["values"]
+            threshold = cov_result["threshold"]
+            violations = cov_result["violations"]
+
+            # Graphique ligne
+            fig = go.Figure()
+
+            # Ligne seuil
+            fig.add_hline(
+                y=threshold,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Seuil: {covenant.comparison} {threshold}",
+                annotation_position="right"
+            )
+
+            # Ligne valeurs
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=values,
+                mode="lines+markers",
+                name=covenant.name,
+                line=dict(width=3),
+                marker=dict(size=8)
+            ))
+
+            # Zone verte/rouge selon covenant
+            if covenant.comparison in [">=", ">"]:
+                # DSCR: au-dessus = bon
+                fig.add_hrect(
+                    y0=threshold, y1=max(values + [threshold]) * 1.2,
+                    fillcolor="green", opacity=0.1,
+                    line_width=0
+                )
+                fig.add_hrect(
+                    y0=0, y1=threshold,
+                    fillcolor="red", opacity=0.1,
+                    line_width=0
+                )
+            else:
+                # Dette/EBITDA: en-dessous = bon
+                fig.add_hrect(
+                    y0=0, y1=threshold,
+                    fillcolor="green", opacity=0.1,
+                    line_width=0
+                )
+                fig.add_hrect(
+                    y0=threshold, y1=max(values + [threshold]) * 1.2,
+                    fillcolor="red", opacity=0.1,
+                    line_width=0
+                )
+
+            fig.update_layout(
+                title=f"{covenant.name} - Projection 7 ans",
+                xaxis_title="Année",
+                yaxis_title=covenant.name,
+                height=300,
+                showlegend=False
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Statut
+            if violations:
+                st.error(f"❌ **Violations détectées**: Années {violations}")
+            else:
+                st.success(f"✅ **Aucune violation** sur 7 ans")
+
+        # Résumé covenants
+        summary = tracker.get_summary(projections)
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Covenants au vert", summary["pass_count"])
+        with col2:
+            st.metric("Covenants en warning", summary["warning_count"])
+        with col3:
+            st.metric("Violations", summary["violated_count"])
+
+        # =====================================================================
+        # SECTION 4: DÉCISION FINALE
+        # =====================================================================
+        st.divider()
+        st.subheader("🎯 4. Décision d'Acquisition")
+
+        # Prendre décision
+        decision = DecisionEngine.make_decision(
+            projections,
+            norm_dict,
+            st.session_state.financial_data,
+            scenario_id="main_scenario"
+        )
+
+        # Affichage décision
+        decision_icon = DecisionEngine.get_decision_icon(decision.decision)
+        decision_color = DecisionEngine.get_decision_color(decision.decision)
+
+        st.markdown(f"## :{decision_color}[{decision_icon} {decision.decision.value.upper()}]")
+        st.markdown(f"**Score global**: {decision.overall_score}/100")
+
+        st.divider()
+
+        # Critères évalués
+        st.markdown("#### 📊 Critères Décisifs")
+
+        for criterion in decision.criteria:
+            icon = "🟢" if criterion.status == "PASS" else "🟡" if criterion.status == "WARNING" else "🔴"
+
+            col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+            with col1:
+                st.write(f"{icon} {criterion.name}")
+            with col2:
+                st.write(f"{criterion.actual_value:.2f}")
+            with col3:
+                st.write(f"Seuil: {criterion.threshold_good:.2f}")
+            with col4:
+                st.write(f"{criterion.score}/100")
+
+        # Deal breakers
+        if decision.deal_breakers:
+            st.divider()
+            st.error("❌ **Problèmes Bloquants**")
+            for db in decision.deal_breakers:
+                st.markdown(f"  {db}")
+
+        # Warnings
+        if decision.warnings:
+            st.divider()
+            st.warning("⚠️ **Points d'Attention**")
+            for warning in decision.warnings:
+                st.markdown(f"  {warning}")
+
+        # Recommandations
+        if decision.recommendations:
+            st.divider()
+            st.info("💡 **Recommandations**")
+            for rec in decision.recommendations:
+                st.markdown(f"  {rec}")
+
+        st.divider()
+
+        # Sauvegarder décision
+        st.session_state.acquisition_decision = decision
+
+        if st.button("✅ Valider Décision", type="primary", use_container_width=True):
+            st.success("✅ Décision validée! Passez à l'onglet 4: Synthèse →")
 
 # =============================================================================
 # TAB 4: SYNTHÈSE

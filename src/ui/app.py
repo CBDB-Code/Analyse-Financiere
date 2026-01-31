@@ -6,6 +6,8 @@ Cette application permet de:
 - Configurer des parametres de scenario (dette, equity, croissance)
 - Calculer et visualiser les metriques financieres
 - Analyser selon differentes perspectives (Banquier, Entrepreneur, Complete)
+
+Version mise a jour avec dashboards interactifs Plotly.
 """
 
 import sys
@@ -38,6 +40,14 @@ from src.calculations.standard.profitability import (
     MargeNette,
 )
 from src.calculations.base import MetricRegistry
+
+# Import des dashboards visualisation
+from src.visualization.dashboards import (
+    BankerDashboard,
+    EntrepreneurDashboard,
+    CompleteDashboard,
+)
+from src.visualization.charts import ChartFactory
 
 
 # =============================================================================
@@ -80,7 +90,33 @@ with st.sidebar:
     """)
 
     st.markdown("---")
-    st.caption("v1.0 - MVP")
+    st.caption("v1.2 - Multi-exercices & Comparaison")
+
+    # Option pour activer les graphiques avances
+    st.divider()
+    use_advanced_charts = st.checkbox(
+        "Graphiques avances",
+        value=True,
+        help="Utiliser les dashboards Plotly interactifs"
+    )
+
+    # Section Analyses Avancees
+    st.divider()
+    st.subheader("Analyses Avancees")
+
+    st.page_link(
+        "pages/2_Tendances.py",
+        label="Tendances Multi-Exercices",
+        icon="📈",
+        help="Analysez les tendances sur plusieurs exercices fiscaux"
+    )
+
+    st.page_link(
+        "pages/3_Comparaison.py",
+        label="Comparaison Entreprises",
+        icon="⚖️",
+        help="Comparez plusieurs entreprises cote a cote"
+    )
 
 
 # =============================================================================
@@ -516,162 +552,195 @@ else:
 
 if "metrics_results" in st.session_state:
     st.divider()
-    st.header("📈 Resultats de l'analyse")
+    st.header("Resultats de l'analyse")
 
     metrics_results = st.session_state["metrics_results"]
-
-    # Recuperation de toutes les metriques enregistrees
-    all_metrics = MetricRegistry.get_all_metrics()
-
-    # Classification des metriques par categorie
-    banker_metrics = []
-    entrepreneur_metrics = []
-    standard_metrics = []
-
-    for metric_class in all_metrics:
-        try:
-            metric_instance = metric_class()
-            category = metric_instance.metadata.category.value
-
-            if category == "banker":
-                banker_metrics.append(metric_instance)
-            elif category == "entrepreneur":
-                entrepreneur_metrics.append(metric_instance)
-            else:
-                standard_metrics.append(metric_instance)
-        except Exception:
-            continue
-
-    # Affichage selon la perspective
-    if perspective == "Banquier":
-        st.subheader("🏦 Perspective Banquier")
-
-        cols = st.columns(len(banker_metrics))
-        for idx, metric in enumerate(banker_metrics):
-            with cols[idx]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-                interpretation = metric.get_interpretation(value) if value is not None else ""
-
-                # Emoji selon le rating
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:30]}...",
-                    value=formatted_value,
-                    help=interpretation
-                )
-
-        # Afficher aussi les metriques standard
-        st.subheader("📋 Metriques standard")
-        cols = st.columns(min(4, len(standard_metrics)))
-        for idx, metric in enumerate(standard_metrics):
-            with cols[idx % len(cols)]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:25]}...",
-                    value=formatted_value,
-                    help=metric.metadata.interpretation
-                )
-
-    elif perspective == "Entrepreneur":
-        st.subheader("👨‍💼 Perspective Entrepreneur")
-
-        cols = st.columns(len(entrepreneur_metrics))
-        for idx, metric in enumerate(entrepreneur_metrics):
-            with cols[idx]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-                interpretation = metric.get_interpretation(value) if value is not None else ""
-
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:30]}...",
-                    value=formatted_value,
-                    help=interpretation
-                )
-
-        # Afficher aussi les metriques standard
-        st.subheader("📋 Metriques standard")
-        cols = st.columns(min(4, len(standard_metrics)))
-        for idx, metric in enumerate(standard_metrics):
-            with cols[idx % len(cols)]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:25]}...",
-                    value=formatted_value,
-                    help=metric.metadata.interpretation
-                )
-
-    else:  # Complete
-        st.subheader("🏦 Perspective Banquier")
-        cols = st.columns(len(banker_metrics))
-        for idx, metric in enumerate(banker_metrics):
-            with cols[idx]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-                interpretation = metric.get_interpretation(value) if value is not None else ""
-
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:30]}...",
-                    value=formatted_value,
-                    help=interpretation
-                )
-
-        st.subheader("👨‍💼 Perspective Entrepreneur")
-        cols = st.columns(len(entrepreneur_metrics))
-        for idx, metric in enumerate(entrepreneur_metrics):
-            with cols[idx]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-                interpretation = metric.get_interpretation(value) if value is not None else ""
-
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:30]}...",
-                    value=formatted_value,
-                    help=interpretation
-                )
-
-        st.subheader("📋 Metriques standard")
-        cols = st.columns(min(4, len(standard_metrics)))
-        for idx, metric in enumerate(standard_metrics):
-            with cols[idx % len(cols)]:
-                metric_name = metric.metadata.name
-                value = metrics_results.get(metric_name, None)
-                formatted_value = format_metric_value(value, metric.metadata.unit)
-
-                emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
-
-                st.metric(
-                    label=f"{emoji} {metric.metadata.description[:25]}...",
-                    value=formatted_value,
-                    help=metric.metadata.interpretation
-                )
-
-    # Affichage des informations du scenario
-    st.divider()
-    st.subheader("📑 Resume du scenario")
-
     scenario_data = st.session_state["scenario_data"]
+
+    # Verifier si on utilise les graphiques avances
+    if use_advanced_charts:
+        # =====================================================================
+        # MODE DASHBOARD AVANCE (Plotly)
+        # =====================================================================
+
+        # Affichage selon la perspective avec dashboards
+        if perspective == "Banquier":
+            dashboard = BankerDashboard()
+            dashboard.render(scenario_data, metrics_results)
+
+        elif perspective == "Entrepreneur":
+            dashboard = EntrepreneurDashboard()
+            dashboard.render(scenario_data, metrics_results)
+
+        else:  # Complete
+            dashboard = CompleteDashboard()
+            dashboard.render(scenario_data, metrics_results)
+
+    else:
+        # =====================================================================
+        # MODE CLASSIQUE (Metriques simples)
+        # =====================================================================
+
+        # Recuperation de toutes les metriques enregistrees
+        all_metrics = MetricRegistry.get_all_metrics()
+
+        # Classification des metriques par categorie
+        banker_metrics = []
+        entrepreneur_metrics = []
+        standard_metrics = []
+
+        for metric_class in all_metrics:
+            try:
+                metric_instance = metric_class()
+                category = metric_instance.metadata.category.value
+
+                if category == "banker":
+                    banker_metrics.append(metric_instance)
+                elif category == "entrepreneur":
+                    entrepreneur_metrics.append(metric_instance)
+                else:
+                    standard_metrics.append(metric_instance)
+            except Exception:
+                continue
+
+        # Affichage selon la perspective
+        if perspective == "Banquier":
+            st.subheader("Perspective Banquier")
+
+            if banker_metrics:
+                cols = st.columns(len(banker_metrics))
+                for idx, metric in enumerate(banker_metrics):
+                    with cols[idx]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+                        interpretation = metric.get_interpretation(value) if value is not None else ""
+
+                        # Emoji selon le rating
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:30]}...",
+                            value=formatted_value,
+                            help=interpretation
+                        )
+
+            # Afficher aussi les metriques standard
+            st.subheader("Metriques standard")
+            if standard_metrics:
+                cols = st.columns(min(4, len(standard_metrics)))
+                for idx, metric in enumerate(standard_metrics):
+                    with cols[idx % len(cols)]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:25]}...",
+                            value=formatted_value,
+                            help=metric.metadata.interpretation
+                        )
+
+        elif perspective == "Entrepreneur":
+            st.subheader("Perspective Entrepreneur")
+
+            if entrepreneur_metrics:
+                cols = st.columns(len(entrepreneur_metrics))
+                for idx, metric in enumerate(entrepreneur_metrics):
+                    with cols[idx]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+                        interpretation = metric.get_interpretation(value) if value is not None else ""
+
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:30]}...",
+                            value=formatted_value,
+                            help=interpretation
+                        )
+
+            # Afficher aussi les metriques standard
+            st.subheader("Metriques standard")
+            if standard_metrics:
+                cols = st.columns(min(4, len(standard_metrics)))
+                for idx, metric in enumerate(standard_metrics):
+                    with cols[idx % len(cols)]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:25]}...",
+                            value=formatted_value,
+                            help=metric.metadata.interpretation
+                        )
+
+        else:  # Complete
+            st.subheader("Perspective Banquier")
+            if banker_metrics:
+                cols = st.columns(len(banker_metrics))
+                for idx, metric in enumerate(banker_metrics):
+                    with cols[idx]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+                        interpretation = metric.get_interpretation(value) if value is not None else ""
+
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:30]}...",
+                            value=formatted_value,
+                            help=interpretation
+                        )
+
+            st.subheader("Perspective Entrepreneur")
+            if entrepreneur_metrics:
+                cols = st.columns(len(entrepreneur_metrics))
+                for idx, metric in enumerate(entrepreneur_metrics):
+                    with cols[idx]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+                        interpretation = metric.get_interpretation(value) if value is not None else ""
+
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:30]}...",
+                            value=formatted_value,
+                            help=interpretation
+                        )
+
+            st.subheader("Metriques standard")
+            if standard_metrics:
+                cols = st.columns(min(4, len(standard_metrics)))
+                for idx, metric in enumerate(standard_metrics):
+                    with cols[idx % len(cols)]:
+                        metric_name = metric.metadata.name
+                        value = metrics_results.get(metric_name, None)
+                        formatted_value = format_metric_value(value, metric.metadata.unit)
+
+                        emoji = get_rating_emoji(value, metric.metadata.benchmark_ranges) if value else ""
+
+                        st.metric(
+                            label=f"{emoji} {metric.metadata.description[:25]}...",
+                            value=formatted_value,
+                            help=metric.metadata.interpretation
+                        )
+
+    # =========================================================================
+    # RESUME DU SCENARIO (commun aux deux modes)
+    # =========================================================================
+    st.divider()
+    st.subheader("Resume du scenario")
+
     scenario_info = scenario_data.get("scenario", {})
 
     col1, col2, col3, col4 = st.columns(4)
@@ -692,7 +761,7 @@ if "metrics_results" in st.session_state:
     with col3:
         d_to_e = scenario_info.get('debt_to_equity', 0)
         if d_to_e == float('inf'):
-            d_to_e_str = "∞"
+            d_to_e_str = "inf"
         else:
             d_to_e_str = f"{d_to_e:.2f}"
         st.metric(
@@ -706,3 +775,70 @@ if "metrics_results" in st.session_state:
             label="Service dette annuel",
             value=f"{annual_service:,.0f} EUR".replace(",", " ")
         )
+
+    # =========================================================================
+    # SECTION GRAPHIQUES SUPPLEMENTAIRES (si mode avance)
+    # =========================================================================
+    if use_advanced_charts:
+        st.divider()
+        st.subheader("Visualisations Avancees")
+
+        chart_factory = ChartFactory()
+
+        # Onglets pour differents graphiques
+        tab_sensitivity, tab_evolution = st.tabs([
+            "Analyse de Sensibilite",
+            "Evolution (simulation)"
+        ])
+
+        with tab_sensitivity:
+            st.markdown("**Impact du taux d'interet sur le DSCR**")
+
+            # Simuler une analyse de sensibilite
+            interest_rates = [3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+            base_dscr = metrics_results.get("DSCR", 1.5)
+
+            if base_dscr and base_dscr != float('inf'):
+                # Simulation simplifiee
+                dscr_values = [base_dscr * (1 + (5 - r) * 0.05) for r in interest_rates]
+                icr_values = [base_dscr * (1 + (5 - r) * 0.08) for r in interest_rates]
+
+                fig = chart_factory.create_sensitivity_analysis(
+                    param_name="Taux d'interet (%)",
+                    param_range=interest_rates,
+                    metric_results={
+                        "DSCR": dscr_values,
+                        "ICR (simule)": icr_values
+                    },
+                    base_value=interest_rate,
+                    title="Sensibilite au Taux d'Interet"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("DSCR non disponible pour l'analyse de sensibilite")
+
+        with tab_evolution:
+            st.markdown("**Projection sur 5 ans (simulation)**")
+
+            # Simuler une evolution
+            years = ["N", "N+1", "N+2", "N+3", "N+4"]
+            ca_base = scenario_data.get("revenues", {}).get("total", {}).get("value", 1000000)
+
+            if ca_base:
+                growth = revenue_growth / 100
+                ca_values = [ca_base * (1 + growth) ** i / 1000000 for i in range(5)]
+                ebitda_base = scenario_data.get("profitability", {}).get("ebitda", {}).get("value", 200000)
+                ebitda_values = [ebitda_base * (1 + growth * 0.8) ** i / 1000 for i in range(5)]
+
+                fig = chart_factory.create_evolution_chart(
+                    years=years,
+                    metrics={
+                        "CA (M EUR)": ca_values,
+                        "EBITDA (k EUR)": ebitda_values
+                    },
+                    title="Projection Financiere",
+                    show_markers=True
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Donnees insuffisantes pour la projection")

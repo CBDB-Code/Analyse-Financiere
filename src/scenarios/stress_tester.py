@@ -210,8 +210,19 @@ class StressTester:
             interest = amount * rate * 0.5  # Moyenne sur la période
             annual_service += principal + interest
 
-        # DSCR simplifié (sera corrigé avec CFADS plus tard)
-        dscr = (ebitda / annual_service) if annual_service > 0 else float('inf')
+        # Paramètres pour calcul CFADS
+        tax_rate = 0.25
+        bfr_pct = data.get("working_capital", {}).get("bfr_pct", 18.0)
+        delta_bfr = ca * (bfr_pct / 100) * 0.1  # Approximation variation
+        capex = ca * 0.03  # 3% CA
+
+        # CFADS (Cash Flow Available for Debt Service) - Formule correcte
+        # CFADS = EBITDA - IS cash ± ΔBFR - Capex maintenance
+        is_cash = ebitda * tax_rate
+        cfads = ebitda - is_cash - delta_bfr - capex
+
+        # DSCR correct (norme bancaire française)
+        dscr = (cfads / annual_service) if annual_service > 0 else float('inf')
 
         # Dette / EBITDA
         leverage = (total_debt / ebitda) if ebitda > 0 else float('inf')
@@ -220,13 +231,8 @@ class StressTester:
         margin = (ebitda / ca * 100) if ca > 0 else 0
 
         # FCF approximatif (année 3)
-        # FCF = EBITDA - IS - ΔBFR - Capex - Service dette
-        tax_rate = 0.25
-        bfr_pct = data.get("working_capital", {}).get("bfr_pct", 18.0)
-        delta_bfr = ca * (bfr_pct / 100) * 0.1  # Approximation variation
-        capex = ca * 0.03  # 3% CA
-
-        fcf_year3 = ebitda - (ebitda * tax_rate) - delta_bfr - capex - annual_service
+        # FCF = CFADS - Service dette
+        fcf_year3 = cfads - annual_service
 
         return {
             "dscr_min": dscr,
@@ -234,6 +240,7 @@ class StressTester:
             "margin": margin,
             "fcf_year3": fcf_year3,
             "ebitda": ebitda,
+            "cfads": cfads,
             "ca": ca,
             "annual_service": annual_service
         }

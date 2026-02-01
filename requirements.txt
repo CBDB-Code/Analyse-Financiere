@@ -1,2 +1,34 @@
-# Web interface (version simplifiée)
+# Core dependencies
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Data manipulation
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Web interface
 streamlit>=1.29.0
+
+# Visualizations
+plotly>=5.18.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# PDF Extraction
+pdfplumber>=0.10.0
+pypdf>=3.17.0
+pdf2image>=1.16.0
+Pillow>=10.0.0
+
+# AI Extraction (Claude API)
+anthropic>=0.40.0
+
+# Excel export (Phase 3.5)
+openpyxl>=3.1.0
+
+# PDF export (Phase 3.6)
+reportlab>=3.6.0

@@ -26,3 +26,9 @@ Pillow>=10.0.0
 
 # AI Extraction (Claude API)
 anthropic>=0.40.0
+
+# Excel export (Phase 3.5)
+openpyxl>=3.1.0
+
+# PDF export (Phase 3.6)
+reportlab>=3.6.0
